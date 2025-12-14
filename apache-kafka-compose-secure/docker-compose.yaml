@@ -1,0 +1,136 @@
+version: '3.8'
+
+networks:
+  kafka-net:
+    driver: bridge
+
+x-kafka-common: &kafka-common
+  image: apache/kafka:4.1.1
+  networks:
+    - kafka-net
+  volumes:
+    - ./secrets:/etc/kafka/secrets
+  environment:
+    # --- JVM & JAAS ---
+    KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf"
+    
+    # --- Cluster ---
+    CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@controller-1:9093,2@controller-2:9093,3@controller-3:9093
+    
+    # --- Protocol Map ---
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:SASL_SSL,INTERNAL:SASL_SSL,EXTERNAL:SASL_SSL
+    
+    # --- SASL ---
+    KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+    KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-256
+    KAFKA_SASL_MECHANISM_CONTROLLER_PROTOCOL: SCRAM-SHA-256
+    
+    # --- SSL Settings ---
+    KAFKA_SSL_KEYSTORE_PASSWORD: kafka123
+    KAFKA_SSL_TRUSTSTORE_PASSWORD: kafka123
+    KAFKA_SSL_CLIENT_AUTH: required
+    
+    # IMPORTANT: Disable Hostname Verification (Set to empty string)
+    KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+
+services:
+  # ---------------------------------------------------------------------------
+  # CONTROLLERS (Internal Only)
+  # ---------------------------------------------------------------------------
+  controller-1:
+    <<: *kafka-common
+    container_name: controller-1
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: controller
+      KAFKA_LISTENERS: CONTROLLER://:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/controller-1.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/controller-1.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"
+
+  controller-2:
+    <<: *kafka-common
+    container_name: controller-2
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: controller
+      KAFKA_LISTENERS: CONTROLLER://:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/controller-2.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/controller-2.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"
+
+  controller-3:
+    <<: *kafka-common
+    container_name: controller-3
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: controller
+      KAFKA_LISTENERS: CONTROLLER://:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/controller-3.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/controller-3.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"
+
+  # ---------------------------------------------------------------------------
+  # BROKERS (External Access Enabled)
+  # ---------------------------------------------------------------------------
+  broker-1:
+    <<: *kafka-common
+    container_name: broker-1
+    depends_on: [controller-1, controller-2, controller-3]
+    ports: ["9094:9094"]
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 4
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9094
+      # CHANGED: Use 127.0.0.1 (IP) instead of broker hostname
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-1:9092,EXTERNAL://127.0.0.1:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/broker-1.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/broker-1.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"
+
+  broker-2:
+    <<: *kafka-common
+    container_name: broker-2
+    depends_on: [controller-1]
+    ports: ["9095:9095"]
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 5
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9095
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-2:9092,EXTERNAL://127.0.0.1:9095
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/broker-2.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/broker-2.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"
+
+  broker-3:
+    <<: *kafka-common
+    container_name: broker-3
+    depends_on: [controller-1]
+    ports: ["9096:9096"]
+    environment:
+      <<: *kafka-common
+      KAFKA_NODE_ID: 6
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9096
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-3:9092,EXTERNAL://127.0.0.1:9096
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/broker-3.keystore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/broker-3.truststore.jks
+    command: >
+      bash -c "/opt/kafka/bin/kafka-storage.sh format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --add-scram 'SCRAM-SHA-256=[name=admin,password=admin-secret]' && /opt/kafka/bin/kafka-server-start.sh /etc/kafka/kafka.properties"

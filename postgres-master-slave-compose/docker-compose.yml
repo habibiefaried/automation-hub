@@ -1,0 +1,87 @@
+x-postgres-common: &postgres-common
+  image: postgres:16
+  user: postgres
+  restart: always
+  healthcheck:
+    test: 'pg_isready -U postgres --dbname=postgres'
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+services:
+  postgres_primary:
+    <<: *postgres-common
+    container_name: postgres_primary
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: password
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "hot_standby=on"
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./init/00_init.sql:/docker-entrypoint-initdb.d/00_init.sql
+      - ./init/01_setup_replication.sh:/docker-entrypoint-initdb.d/01_setup_replication.sh
+    networks:
+      - postgres_network
+
+  postgres_replica:
+    <<: *postgres-common
+    container_name: postgres_replica
+    environment:
+      POSTGRES_PASSWORD: password
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    command: |
+      bash -c "
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        until PGPASSWORD=$POSTGRES_PASSWORD pg_isready -h postgres_primary -U postgres; do
+          echo 'Waiting for primary to be ready...'
+          sleep 2
+        done
+        echo 'Creating base backup...'
+        PGPASSWORD=replicator_password pg_basebackup -h postgres_primary -D /var/lib/postgresql/data -U replicator -v -P -R
+        chown -R postgres:postgres /var/lib/postgresql/data
+        chmod -R 700 /var/lib/postgresql/data
+      fi
+      postgres
+      "
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    networks:
+      - postgres_network
+
+  pgcat:
+    image: ghcr.io/postgresml/pgcat:latest
+    container_name: pgcat
+    restart: always
+    ports:
+      - "6432:6432"
+    volumes:
+      - ./pgcat/pgcat.toml:/etc/pgcat/pgcat.toml
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+      postgres_replica:
+        condition: service_healthy
+    networks:
+      - postgres_network
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
+
+networks:
+  postgres_network:
+    driver: bridge

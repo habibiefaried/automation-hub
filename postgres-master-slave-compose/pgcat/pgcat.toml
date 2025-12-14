@@ -1,0 +1,25 @@
+[general]
+host = "0.0.0.0"
+port = 6432
+admin_username = "admin"
+admin_password = "admin"
+pool_mode = "transaction"
+server_lifetime = 86400
+idle_timeout = 30000
+connect_timeout = 5000
+
+[pools.postgres]
+pool_size = 10
+default_role = "primary"
+
+[pools.postgres.users.0]
+username = "postgres"
+password = "password"
+pool_size = 10
+
+[pools.postgres.shards.0]
+servers = [
+    ["postgres_primary", 5432, "primary"],
+    ["postgres_replica", 5432, "replica"]
+]
+database = "postgres"

@@ -33,3 +33,9 @@ POD# bin/kafka-configs.sh \
 # verify
 POD# bin/kafka-configs.sh --bootstrap-server localhost:19092 --describe --entity-type users --entity-name superadmin
 ```
+
+## cleanup
+
+```
+kubectl delete all --all -n kafka-secure
+```
