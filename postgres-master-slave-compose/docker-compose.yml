@@ -48,7 +48,7 @@ services:
           sleep 2
         done
         echo 'Creating base backup...'
-        PGPASSWORD=replicator_password pg_basebackup -h postgres_primary -D /var/lib/postgresql/data -U replicator -v -P -R
+        pg_basebackup -h postgres_primary -D /var/lib/postgresql/data -U replicator -v -P -R
         chown -R postgres:postgres /var/lib/postgresql/data
         chmod -R 700 /var/lib/postgresql/data
       fi
