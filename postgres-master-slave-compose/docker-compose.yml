@@ -54,6 +54,11 @@ services:
       fi
       postgres
       "
+    healthcheck:
+      test: 'pg_isready -U postgres --dbname=postgres'
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       postgres_primary:
         condition: service_healthy
