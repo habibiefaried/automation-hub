@@ -11,6 +11,12 @@ connect_timeout = 5000
 [pools.postgres]
 pool_size = 10
 default_role = "primary"
+# Enable query parser to detect read vs write queries
+query_parser_enabled = true
+# Enable read/write splitting based on query parsing
+query_parser_read_write_splitting = true
+# Allow primary to be used for reads (optional, set to false to only use replicas for reads)
+primary_reads_enabled = false
 
 [pools.postgres.users.0]
 username = "postgres"
