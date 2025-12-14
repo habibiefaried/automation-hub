@@ -94,29 +94,44 @@ services:
     volumes:
       - postgres_replica_05_data:/var/lib/postgresql/data
 
-  pgcat:
-    image: ghcr.io/postgresml/pgcat:latest
-    container_name: pgcat
-    restart: always
+x-pgcat-common: &pgcat-common
+  image: ghcr.io/postgresml/pgcat:latest
+  restart: always
+  volumes:
+    - ./pgcat/pgcat-massive.toml:/etc/pgcat/pgcat.toml
+  depends_on:
+    postgres_primary:
+      condition: service_healthy
+    postgres_replica_01:
+      condition: service_healthy
+    postgres_replica_02:
+      condition: service_healthy
+    postgres_replica_03:
+      condition: service_healthy
+    postgres_replica_04:
+      condition: service_healthy
+    postgres_replica_05:
+      condition: service_healthy
+  networks:
+    - postgres_network
+
+  pgcat_01:
+    <<: *pgcat-common
+    container_name: pgcat_01
     ports:
       - "6432:6432"
-    volumes:
-      - ./pgcat/pgcat-massive.toml:/etc/pgcat/pgcat.toml
-    depends_on:
-      postgres_primary:
-        condition: service_healthy
-      postgres_replica_01:
-        condition: service_healthy
-      postgres_replica_02:
-        condition: service_healthy
-      postgres_replica_03:
-        condition: service_healthy
-      postgres_replica_04:
-        condition: service_healthy
-      postgres_replica_05:
-        condition: service_healthy
-    networks:
-      - postgres_network
+
+  pgcat_02:
+    <<: *pgcat-common
+    container_name: pgcat_02
+    ports:
+      - "6433:6432"
+
+  pgcat_03:
+    <<: *pgcat-common
+    container_name: pgcat_03
+    ports:
+      - "6434:6432"
 
 volumes:
   postgres_primary_data:

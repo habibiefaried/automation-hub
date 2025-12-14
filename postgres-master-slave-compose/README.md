@@ -49,21 +49,26 @@ Both configurations use:
 
 ## Architecture
 
-### Massive Setup (1 Master + 5 Replicas)
+### Massive Setup (1 Master + 5 Replicas + 3 PgCat)
 
 ```
 ┌─────────────────┐
 │   Application   │
 └────────┬────────┘
          │
-         │ Port 6432
-         │
-┌────────▼────────┐
-│     PgCat       │  Connection Pooler & Query Router
-└────────┬────────┘
-         │
-    ┌────┴────┬──────────┬──────────┬──────────┬──────────┐
-    │         │          │          │          │          │
+    ┌────┼────┐
+    │    │    │
+    │ Port 6432, 6433, 6434
+    │    │    │
+┌───▼──┐┌───▼──┐┌───▼──┐
+│PgCat ││PgCat ││PgCat │  Connection Poolers & Query Routers
+│  01  ││  02  ││  03  │  (High Availability - No SPOF)
+└───┬──┘└───┬──┘└───┬──┘
+    │       │       │
+    └───┬───┴───┬───┘
+        │       │
+    ┌───┴───┬───┴───┬──────────┬──────────┬──────────┐
+    │       │       │          │          │          │
 ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐
 │Primary│ │Replica│ │Replica│ │Replica│ │Replica│ │Replica│
 │       │ │  01   │ │  02   │ │  03   │ │  04   │ │  05   │
@@ -77,9 +82,12 @@ Both configurations use:
 
 - **postgres_primary**: Master database server (accepts writes)
 - **postgres_replica_01 to 05**: Read replicas (synchronized via streaming replication)
-- **pgcat**: Connection pooler that routes:
-  - **Writes** (INSERT, UPDATE, DELETE) → Primary
-  - **Reads** (SELECT) → Replicas (load balanced)
+- **pgcat_01, pgcat_02, pgcat_03**: Connection poolers (3 instances for high availability, no SPOF)
+  - **Ports**: 6432, 6433, 6434 (respectively)
+  - **Function**: Routes:
+    - **Writes** (INSERT, UPDATE, DELETE) → Primary
+    - **Reads** (SELECT) → Replicas (load balanced)
+  - **High Availability**: Applications can connect to any of the 3 PgCat instances
 
 ## Prerequisites
 
