@@ -2,6 +2,49 @@
 
 This document contains operational runbooks for managing the PostgreSQL master-slave replication setup.
 
+## TLDR
+
+**Promote Replica to Master (Failover) - Quick Steps:**
+
+1. **Verify master is down:**
+   ```bash
+   docker ps -a | grep postgres_primary
+   ```
+
+2. **Choose best replica** (check WAL lag):
+   ```bash
+   docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+     "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
+   ```
+
+3. **Promote replica:**
+   ```bash
+   docker exec -it postgres_replica_01 psql -U postgres -d postgres -c "SELECT pg_promote();"
+   ```
+
+4. **Update other replicas** (change DNS in config):
+   ```bash
+   docker exec postgres_replica_02 bash -c \
+     "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /var/lib/postgresql/data/postgresql.auto.conf"
+   docker restart postgres_replica_02
+   ```
+
+5. **Update PgCat config** (inside container):
+   ```bash
+   docker exec pgcat bash -c \
+     "sed -i 's/\[\"postgres_replica_01\", 5432, \"replica\"\]/[\"postgres_replica_01\", 5432, \"primary\"]/' /etc/pgcat/pgcat.toml"
+   docker restart pgcat
+   ```
+
+**Key Points:**
+- ⚠️ **No docker-compose changes** - all updates via `docker exec`
+- ✅ **Promote with** `pg_promote()` (PostgreSQL 9.6+)
+- ✅ **Update replica DNS** in `postgresql.auto.conf`
+- ✅ **Update PgCat** config inside container
+- ✅ **Verify** with `pg_is_in_recovery()` and test writes
+
+**Estimated Time:** 10-15 minutes
+
 ## Table of Contents
 
 1. [Promote Replica to Master (Failover)](#promote-replica-to-master-failover)
@@ -93,12 +136,29 @@ docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
 
 ### Step 4: Update Replication Setup on New Master
 
-Ensure the new master has the replication user configured:
+Ensure the new master has the replicator role configured:
 
 ```bash
-# Connect to new master and create replication user if it doesn't exist
+# Connect to new master and create replicator role if it doesn't exist
 docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
   "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'replicator') THEN CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'replicator_password'; END IF; END \$\$;"
+
+# Verify the replicator role exists
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
+
+# Create replication slots for other replicas (optional but recommended)
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT pg_create_physical_replication_slot('replica_02_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_02_slot');"
+
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT pg_create_physical_replication_slot('replica_03_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_03_slot');"
+
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT pg_create_physical_replication_slot('replica_04_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_04_slot');"
+
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT pg_create_physical_replication_slot('replica_05_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_05_slot');"
 
 # Verify slots
 docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
@@ -269,18 +329,35 @@ Check that all replicas are now replicating from the new master:
 docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
   "SELECT application_name, state, sync_state, client_addr FROM pg_stat_replication;"
 
+# Verify replicator role exists on new master
+docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
+
 # Verify each replica is in recovery mode and connected
+# Also verify replicator role exists on each replica
 docker exec -it postgres_replica_02 psql -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
+
+docker exec -it postgres_replica_02 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
 
 docker exec -it postgres_replica_03 psql -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
 
+docker exec -it postgres_replica_03 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
+
 docker exec -it postgres_replica_04 psql -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
 
+docker exec -it postgres_replica_04 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
+
 docker exec -it postgres_replica_05 psql -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
+
+docker exec -it postgres_replica_05 psql -U postgres -d postgres -c \
+  "SELECT rolname, rolreplication FROM pg_roles WHERE rolname = 'replicator';"
 ```
 
 **Expected Results**:

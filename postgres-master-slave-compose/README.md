@@ -2,6 +2,38 @@
 
 This repository contains Docker Compose configurations for PostgreSQL master-slave replication setups with PgCat connection pooling.
 
+## TLDR
+
+**Quick Start:**
+```bash
+# Standard setup (1 master + 1 replica)
+docker-compose up -d
+
+# Massive setup (1 master + 5 replicas)
+docker-compose -f docker-compose-massive.yml up -d
+```
+
+**Connect via PgCat:**
+```bash
+psql -h localhost -p 6432 -U postgres -d postgres
+# Password: password
+```
+
+**Key Points:**
+- ✅ **1 master + 1-5 replicas** (PostgreSQL 16)
+- ✅ **PgCat** routes writes → master, reads → replicas
+- ✅ **Streaming replication** for real-time sync
+- ✅ **Port 6432** for application connections
+- ✅ **Health checks** ensure proper startup order
+- ✅ **Replicator role** auto-created on master, inherited by replicas
+
+**Credentials:**
+- Host: `localhost`
+- Port: `6432`
+- Username: `postgres`
+- Password: `password`
+- Database: `postgres`
+
 ## Overview
 
 This setup provides two configurations:
@@ -340,6 +372,16 @@ docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
 - **Max WAL Senders**: `10` (supports up to 10 concurrent replicas)
 - **Max Replication Slots**: `10` (prevents WAL deletion if replica is down)
 - **Hot Standby**: `on` (allows read queries on replicas)
+
+### Replication User (Replicator Role)
+
+- **Role Name**: `replicator`
+- **Password**: `replicator_password`
+- **Created On**: Master (via `init/01_setup_replication.sh`)
+- **Inherited By**: Replicas (automatically copied via `pg_basebackup`)
+- **Purpose**: Used for streaming replication between master and replicas
+
+The replicator role is created on the master during initialization and is automatically available on all replicas since `pg_basebackup` copies the entire data directory including all roles.
 
 ### PgCat Configuration
 
