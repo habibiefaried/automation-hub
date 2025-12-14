@@ -91,24 +91,6 @@ docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
 
 **Expected Result**: `pg_is_in_recovery()` should return `f` (false), indicating it's no longer a replica.
 
-**Alternative Method** (if `pg_promote()` doesn't work):
-
-```bash
-# Stop the container
-docker stop postgres_replica_01
-
-# Remove the standby.signal file inside the container
-docker exec postgres_replica_01 rm -f /var/lib/postgresql/data/standby.signal
-
-# Start the container
-docker start postgres_replica_01
-
-# Wait and verify
-sleep 5
-docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
-  "SELECT pg_is_in_recovery();"
-```
-
 ### Step 4: Update Replication Setup on New Master
 
 Ensure the new master has the replication user configured:
@@ -118,19 +100,6 @@ Ensure the new master has the replication user configured:
 docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
   "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'replicator') THEN CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'replicator_password'; END IF; END \$\$;"
 
-# Create replication slots for other replicas (optional but recommended)
-docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
-  "SELECT pg_create_physical_replication_slot('replica_02_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_02_slot');"
-
-docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
-  "SELECT pg_create_physical_replication_slot('replica_03_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_03_slot');"
-
-docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
-  "SELECT pg_create_physical_replication_slot('replica_04_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_04_slot');"
-
-docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
-  "SELECT pg_create_physical_replication_slot('replica_05_slot') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_05_slot');"
-
 # Verify slots
 docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
   "SELECT * FROM pg_replication_slots;"
@@ -138,22 +107,18 @@ docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
 
 ### Step 5: Update Other Replicas to Point to New Master
 
-Update each remaining replica's configuration to point to the new master using `docker exec`:
+Update each remaining replica's configuration to point to the new master. We'll edit the file inside the running container, then restart it:
 
 ```bash
 # For each replica (02, 03, 04, 05), update the primary_conninfo
-# We'll update postgresql.auto.conf inside each container
+# We'll update postgresql.auto.conf inside each running container
 
-# Replica 02: Stop first, then update config
-docker stop postgres_replica_02
+# Replica 02: Edit config inside running container
+docker exec postgres_replica_02 bash -c \
+  "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /var/lib/postgresql/data/postgresql.auto.conf"
 
-# Update primary_conninfo in postgresql.auto.conf using a temporary container
-# We need to mount the volume and edit the file
-docker run --rm -v postgres-master-slave-compose_postgres_replica_02_data:/data \
-  postgres:16 bash -c "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /data/postgresql.auto.conf"
-
-# Start replica 02
-docker start postgres_replica_02
+# Restart replica 02 to pick up the changes
+docker restart postgres_replica_02
 
 # Wait and verify it's connecting to new master
 sleep 5
@@ -161,41 +126,38 @@ docker exec -it postgres_replica_02 psql -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
 
 # Repeat for Replica 03
-docker stop postgres_replica_03
-docker run --rm -v postgres-master-slave-compose_postgres_replica_03_data:/data \
-  postgres:16 bash -c "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /data/postgresql.auto.conf"
-docker start postgres_replica_03
+docker exec postgres_replica_03 bash -c \
+  "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /var/lib/postgresql/data/postgresql.auto.conf"
+docker restart postgres_replica_03
 sleep 5
 
 # Repeat for Replica 04
-docker stop postgres_replica_04
-docker run --rm -v postgres-master-slave-compose_postgres_replica_04_data:/data \
-  postgres:16 bash -c "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /data/postgresql.auto.conf"
-docker start postgres_replica_04
+docker exec postgres_replica_04 bash -c \
+  "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /var/lib/postgresql/data/postgresql.auto.conf"
+docker restart postgres_replica_04
 sleep 5
 
 # Repeat for Replica 05
-docker stop postgres_replica_05
-docker run --rm -v postgres-master-slave-compose_postgres_replica_05_data:/data \
-  postgres:16 bash -c "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /data/postgresql.auto.conf"
-docker start postgres_replica_05
+docker exec postgres_replica_05 bash -c \
+  "sed -i 's/host=postgres_primary/host=postgres_replica_01/g' /var/lib/postgresql/data/postgresql.auto.conf"
+docker restart postgres_replica_05
 sleep 5
 ```
 
 **Alternative Method** (if sed doesn't work, manually edit the file):
 
 ```bash
-# For each replica, you can view the config file using a temporary container
-docker run --rm -v postgres-master-slave-compose_postgres_replica_02_data:/data \
-  postgres:16 cat /data/postgresql.auto.conf
+# For each replica, you can view and edit the config file inside the running container
+docker exec -it postgres_replica_02 cat /var/lib/postgresql/data/postgresql.auto.conf
 
-# Or use a text editor with a temporary container
-docker run --rm -it -v postgres-master-slave-compose_postgres_replica_02_data:/data \
-  postgres:16 bash
+# Or use a text editor inside the container
+docker exec -it postgres_replica_02 bash
 # Then inside the container:
-# vi /data/postgresql.auto.conf
+# vi /var/lib/postgresql/data/postgresql.auto.conf
 # Change: primary_conninfo = 'host=postgres_primary ...'
 # To:     primary_conninfo = 'host=postgres_replica_01 ...'
+# Exit the container, then restart it:
+# docker restart postgres_replica_02
 ```
 
 **Note**: The `postgresql.auto.conf` file contains a line like:
