@@ -7,10 +7,10 @@ This repository contains Docker Compose configurations for PostgreSQL master-sla
 **Quick Start:**
 ```bash
 # Standard setup (1 master + 1 replica)
-docker-compose up -d
+docker compose up -d
 
 # Massive setup (1 master + 5 replicas)
-docker-compose -f docker-compose-massive.yml up -d
+docker compose -f docker-compose-massive.yml up -d
 ```
 
 **Connect via PgCat:**
@@ -21,15 +21,15 @@ psql -h localhost -p 6432 -U postgres -d postgres
 
 **Key Points:**
 - ✅ **1 master + 1-5 replicas** (PostgreSQL 16)
+- ✅ **3 PgCat instances** (ports 6432, 6433, 6434) - High Availability, No SPOF
 - ✅ **PgCat** routes writes → master, reads → replicas
 - ✅ **Streaming replication** for real-time sync
-- ✅ **Port 6432** for application connections
 - ✅ **Health checks** ensure proper startup order
 - ✅ **Replicator role** auto-created on master, inherited by replicas
 
 **Credentials:**
 - Host: `localhost`
-- Port: `6432`
+- Port: `6432`, `6433`, or `6434` (any of the 3 PgCat instances)
 - Username: `postgres`
 - Password: `password`
 - Database: `postgres`
@@ -102,26 +102,26 @@ Both configurations use:
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Check status
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### Massive Setup (1 Master + 5 Replicas)
 
 ```bash
 # Start all services
-docker-compose -f docker-compose-massive.yml up -d
+docker compose -f docker-compose-massive.yml up -d
 
 # Check status
-docker-compose -f docker-compose-massive.yml ps
+docker compose -f docker-compose-massive.yml ps
 
 # View logs
-docker-compose -f docker-compose-massive.yml logs -f
+docker compose -f docker-compose-massive.yml logs -f
 ```
 
 **Note**: The first startup may take a few minutes as each replica performs a base backup from the primary.
@@ -130,11 +130,17 @@ docker-compose -f docker-compose-massive.yml logs -f
 
 ### Connect via PgCat (Recommended)
 
-PgCat acts as a single entry point and automatically routes queries:
+PgCat acts as a single entry point and automatically routes queries. With 3 PgCat instances, you can connect to any of them for high availability:
 
 ```bash
-# Using psql
+# Using psql - Connect to PgCat 01 (port 6432)
 psql -h localhost -p 6432 -U postgres -d postgres
+
+# Or connect to PgCat 02 (port 6433)
+psql -h localhost -p 6433 -U postgres -d postgres
+
+# Or connect to PgCat 03 (port 6434)
+psql -h localhost -p 6434 -U postgres -d postgres
 
 # Or with password in command
 PGPASSWORD=password psql -h localhost -p 6432 -U postgres -d postgres
@@ -142,10 +148,12 @@ PGPASSWORD=password psql -h localhost -p 6432 -U postgres -d postgres
 
 **Credentials:**
 - **Host**: `localhost`
-- **Port**: `6432`
+- **Port**: `6432`, `6433`, or `6434` (any of the 3 PgCat instances)
 - **Username**: `postgres`
 - **Password**: `password`
 - **Database**: `postgres`
+
+**High Availability**: Applications should implement connection retry logic to failover between the 3 PgCat instances if one becomes unavailable.
 
 ### Direct Connection to Primary
 
@@ -258,7 +266,10 @@ COMMIT;
 **Verification**: Check PgCat logs to see which replica handled each query:
 
 ```bash
-docker logs pgcat | grep -i replica
+# Check any of the 3 PgCat instances
+docker logs pgcat_01 | grep -i replica
+docker logs pgcat_02 | grep -i replica
+docker logs pgcat_03 | grep -i replica
 ```
 
 ### Test 5: Write-Read Consistency Test
@@ -308,21 +319,21 @@ psql -h localhost -p 6432 -U postgres -d postgres -c \
 
 ```bash
 # Standard setup
-docker-compose ps
+docker compose ps
 
 # Massive setup
-docker-compose -f docker-compose-massive.yml ps
+docker compose -f docker-compose-massive.yml ps
 ```
 
 ### View Logs
 
 ```bash
 # All services
-docker-compose -f docker-compose-massive.yml logs -f
+docker compose -f docker-compose-massive.yml logs -f
 
 # Specific service
-docker-compose -f docker-compose-massive.yml logs -f postgres_primary
-docker-compose -f docker-compose-massive.yml logs -f pgcat
+docker compose -f docker-compose-massive.yml logs -f postgres_primary
+docker compose -f docker-compose-massive.yml logs -f pgcat
 ```
 
 ### Check Replication Status
@@ -354,11 +365,14 @@ docker exec -it postgres_replica_01 psql -U postgres -d postgres -c \
 ### Check PgCat Status
 
 ```bash
-# View PgCat logs
-docker logs pgcat
+# View PgCat logs (check all 3 instances)
+docker logs pgcat_01
+docker logs pgcat_02
+docker logs pgcat_03
 
 # Check PgCat admin interface (if enabled)
 # Note: Admin interface configuration may vary by PgCat version
+# Each instance can be accessed on its respective port
 ```
 
 ### Verify Replica Read-Only Status
@@ -393,10 +407,12 @@ The replicator role is created on the master during initialization and is automa
 
 ### PgCat Configuration
 
+- **Instances**: 3 PgCat instances for high availability (no SPOF)
+- **Ports**: `6432`, `6433`, `6434` (one per instance)
 - **Pool Mode**: `transaction` (routes writes to primary, reads to replicas)
-- **Port**: `6432`
 - **Pool Size**: `10` connections per pool
 - **Servers**: 1 primary + 5 replicas (in massive setup)
+- **High Availability**: Applications can connect to any of the 3 instances; implement retry logic for failover
 
 ## Troubleshooting
 
@@ -405,9 +421,9 @@ The replicator role is created on the master during initialization and is automa
 **Symptom**: Replicas fail to start or show errors.
 
 **Solution**:
-1. Check primary is healthy: `docker-compose ps postgres_primary`
+1. Check primary is healthy: `docker compose ps postgres_primary`
 2. Verify replication user exists: Check `init/01_setup_replication.sh`
-3. Check logs: `docker-compose logs postgres_replica_01`
+3. Check logs: `docker compose logs postgres_replica_01`
 
 ### Replication Lag
 
@@ -421,12 +437,22 @@ The replicator role is created on the master during initialization and is automa
 
 ### Cannot Connect to PgCat
 
+**Symptom**: Connection refused on ports 6432, 6433, or 6434.
+
+**Solution**:
+1. Check PgCat instances are running: `docker compose ps pgcat_01 pgcat_02 pgcat_03`
+2. Verify port mappings: `docker port pgcat_01 pgcat_02 pgcat_03`
+3. Check PgCat logs: `docker logs pgcat_01` (check all 3 instances)
+4. Ensure all dependencies (primary and replicas) are healthy
+
+### Cannot Connect to PgCat
+
 **Symptom**: Connection refused on port 6432.
 
 **Solution**:
-1. Check PgCat is running: `docker-compose ps pgcat`
+1. Check PgCat is running: `docker compose ps pgcat`
 2. Verify port mapping: `docker port pgcat`
-3. Check PgCat logs: `docker logs pgcat`
+3. Check PgCat logs: `docker logs pgcat_01` (or pgcat_02, pgcat_03)
 4. Ensure all dependencies (primary and replicas) are healthy
 
 ### Write Operations Failing
@@ -434,10 +460,10 @@ The replicator role is created on the master during initialization and is automa
 **Symptom**: INSERT/UPDATE/DELETE operations fail.
 
 **Solution**:
-1. Verify connection is going through PgCat (port 6432)
-2. Check primary is healthy: `docker-compose ps postgres_primary`
+1. Verify connection is going through PgCat (ports 6432, 6433, or 6434)
+2. Check primary is healthy: `docker compose ps postgres_primary`
 3. Check PgCat configuration: `cat pgcat/pgcat-massive.toml`
-4. Review PgCat logs for routing errors
+4. Review PgCat logs for routing errors: `docker logs pgcat_01` (check all 3 instances)
 
 ### Replica Out of Sync
 
@@ -445,12 +471,12 @@ The replicator role is created on the master during initialization and is automa
 
 **Solution**:
 1. Check replication status on primary
-2. Restart the affected replica: `docker-compose restart postgres_replica_01`
+2. Restart the affected replica: `docker compose restart postgres_replica_01`
 3. If persistent, remove replica volume and recreate:
    ```bash
-   docker-compose stop postgres_replica_01
+   docker compose stop postgres_replica_01
    docker volume rm postgres-master-slave-compose_postgres_replica_01_data
-   docker-compose up -d postgres_replica_01
+   docker compose up -d postgres_replica_01
    ```
 
 ## Cleanup
@@ -459,20 +485,20 @@ The replicator role is created on the master during initialization and is automa
 
 ```bash
 # Standard setup
-docker-compose down
+docker compose down
 
 # Massive setup
-docker-compose -f docker-compose-massive.yml down
+docker compose -f docker-compose-massive.yml down
 ```
 
 ### Remove All Data (⚠️ Destructive)
 
 ```bash
 # Standard setup
-docker-compose down -v
+docker compose down -v
 
 # Massive setup
-docker-compose -f docker-compose-massive.yml down -v
+docker compose -f docker-compose-massive.yml down -v
 ```
 
 **Warning**: This will delete all database data!
@@ -514,4 +540,6 @@ See the main repository license file.
 - [PostgreSQL Streaming Replication](https://www.postgresql.org/docs/current/high-availability.html)
 - [PgCat Documentation](https://github.com/postgresml/pgcat)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
+
+**Note**: This setup uses Docker Compose V2 syntax (`docker compose`). If you're using Docker Compose V1, replace `docker compose` with `docker-compose` in all commands.
 

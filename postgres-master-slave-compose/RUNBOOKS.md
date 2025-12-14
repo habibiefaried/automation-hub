@@ -37,7 +37,7 @@ This document contains operational runbooks for managing the PostgreSQL master-s
    ```
 
 **Key Points:**
-- ⚠️ **No docker-compose changes** - all updates via `docker exec`
+- ⚠️ **No Docker Compose file changes** - all updates via `docker exec`
 - ✅ **Promote with** `pg_promote()` (PostgreSQL 9.6+)
 - ✅ **Update replica DNS** in `postgresql.auto.conf`
 - ✅ **Update PgCat** config inside container
@@ -62,7 +62,7 @@ This document contains operational runbooks for managing the PostgreSQL master-s
 
 **Estimated Time**: 10-15 minutes
 
-**Important**: This runbook uses `docker exec` to update configurations inside containers. No docker-compose files are modified.
+**Important**: This runbook uses `docker exec` to update configurations inside containers. No Docker Compose files are modified.
 
 ### Step 1: Verify Master Failure
 
@@ -501,7 +501,7 @@ Additional runbooks to be added:
 
 - All commands assume you're in the `postgres-master-slave-compose` directory
 - Replace `postgres_replica_01` with your chosen replica if different
-- **This runbook does NOT modify docker-compose files** - all changes are made inside containers using `docker exec`
+- **This runbook does NOT modify Docker Compose files** - all changes are made inside containers using `docker exec`
 - Always test these procedures in a non-production environment first
 - Keep backups before performing any destructive operations
 - Document any environment-specific variations
